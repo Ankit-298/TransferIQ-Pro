@@ -1,9 +1,7 @@
-Flask
-flask-cors
+streamlit
 pandas
 numpy
 xgboost
 tensorflow-cpu
-gunicorn
-streamlit
+scikit-learn
 plotly
