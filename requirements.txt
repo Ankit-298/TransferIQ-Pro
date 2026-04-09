@@ -1,9 +1,9 @@
-Flask==3.0.0
-flask-cors==4.0.0
-pandas==2.1.1
-numpy==1.26.0
-xgboost==2.0.0
-tensorflow-cpu==2.14.0
-gunicorn==21.2.0
+Flask
+flask-cors
+pandas
+numpy
+xgboost
+tensorflow-cpu
+gunicorn
 streamlit
 plotly
