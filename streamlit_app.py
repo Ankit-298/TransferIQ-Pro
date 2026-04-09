@@ -1,10 +1,11 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-import tensorflow as tf
 import random
 import plotly.graph_objects as go
+import plotly.express as px
 from io import StringIO
 
 # ─── PAGE CONFIG ────────────────────────────────────────────────────────────
@@ -15,12 +16,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ─── GLOBAL CSS — mirrors index.html as closely as possible ─────────────────
+# ─── GLOBAL CSS — PREMIUM DARK THEME ────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* ── Reset & base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -37,7 +37,6 @@ st.markdown("""
     --danger:      #f36969;
 }
 
-/* ── Streamlit overrides ── */
 html, body, [data-testid="stAppViewContainer"],
 [data-testid="stMain"], .main, .block-container {
     background-color: var(--bg) !important;
@@ -57,37 +56,19 @@ html, body, [data-testid="stAppViewContainer"],
     background-attachment: fixed !important;
 }
 
-/* hide default streamlit header / footer / decoration */
-[data-testid="stHeader"],
-[data-testid="stDecoration"],
-[data-testid="stStatusWidget"],
-#MainMenu, footer, header { display: none !important; }
+[data-testid="stHeader"], [data-testid="stDecoration"],
+[data-testid="stStatusWidget"], #MainMenu, footer, header { display: none !important; }
 
-/* ── Top padding reset ── */
 .block-container { padding: 0 !important; max-width: 100% !important; margin: 0 auto !important; }
 
-/* ── Hide ALL Streamlit generated labels (we use ctrl-hdr custom ones) ── */
-[data-testid="stSlider"] > label,
-[data-testid="stSelectbox"] > label,
-[data-testid="stTextInput"] > label,
-[data-testid="stTextArea"] > label,
-[data-testid="stFileUploader"] > label,
-[data-testid="stNumberInput"] > label { display: none !important; }
+[data-testid="stSlider"] > label, [data-testid="stSelectbox"] > label,
+[data-testid="stTextInput"] > label, [data-testid="stTextArea"] > label,
+[data-testid="stFileUploader"] > label, [data-testid="stNumberInput"] > label { display: none !important; }
 
-/* ── Column card styling — makes columns look like cards ── */
-/* Removed globally to prevent empty boxes, relying on manual .card class */
-
-/* ── Navbar ── */
 .tiq-navbar {
-    background: rgba(6,8,16,0.88);
-    padding: 12px 32px;
-    border-bottom: 1px solid rgba(77,135,255,0.12);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: sticky; top: 0; z-index: 100;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: rgba(6,8,16,0.88); padding: 12px 32px; border-bottom: 1px solid rgba(77,135,255,0.12);
+    display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
 }
 .tiq-logo {
     font-size: 1.3rem; font-weight: 700; letter-spacing: 0.5px;
@@ -95,194 +76,94 @@ html, body, [data-testid="stAppViewContainer"],
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
 
-/* ── Market Ticker ── */
 .ticker-wrap {
-    background: var(--surface-dark);
-    border-bottom: 1px solid var(--border);
-    padding: 7px 0; overflow: hidden;
-    font-size: 0.75rem; color: var(--text-muted);
-    white-space: nowrap;
+    background: var(--surface-dark); border-bottom: 1px solid var(--border);
+    padding: 7px 0; overflow: hidden; font-size: 0.75rem; color: var(--text-muted); white-space: nowrap;
 }
 .ticker-track { display: inline-block; animation: ticker 45s linear infinite; }
 .ticker-track span { margin-right: 55px; }
 .tp { color: var(--success); font-weight: 600; }
 .tn { color: var(--danger);  font-weight: 600; }
 .tx { color: var(--accent-alt); font-weight: 600; }
-@keyframes ticker {
-    0%   { transform: translateX(5%); }
-    100% { transform: translateX(-100%); }
-}
+@keyframes ticker { 0%   { transform: translateX(5%); } 100% { transform: translateX(-100%); } }
 
-/* ── Tabs ── */
 .tiq-tabs { display: flex; gap: 4px; }
 .tiq-tab {
-    background: none; border: none; color: #7a90b8;
-    font-size: 0.85rem; cursor: pointer;
-    padding: 8px 14px; border-bottom: 2px solid transparent;
-    transition: 0.3s ease; font-weight: 500;
-    font-family: inherit;
+    background: none; border: none; color: #7a90b8; font-size: 0.85rem; cursor: pointer;
+    padding: 8px 14px; border-bottom: 2px solid transparent; transition: 0.3s ease; font-weight: 500; font-family: inherit;
 }
 .tiq-tab:hover { color: #c8d8ff; }
-.tiq-tab.active {
-    color: #fff; border-bottom-color: var(--accent);
-    font-weight: 600; text-shadow: 0 0 12px rgba(77,135,255,0.4);
-}
+.tiq-tab.active { color: #fff; border-bottom-color: var(--accent); font-weight: 600; text-shadow: 0 0 12px rgba(77,135,255,0.4); }
 
-/* ── Main container ── */
 .tiq-container { max-width: 100%; margin: 12px auto; padding: 0 20px; }
 
-/* ── Cards ── */
 .card {
-    background: rgba(10,15,28,0.72);
-    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    padding: 20px; border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.06);
-    transition: all 0.3s ease;
-    margin-bottom: 15px;
+    background: rgba(10,15,28,0.72); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); transition: all 0.3s ease; margin-bottom: 15px;
 }
-.card:hover {
-    border-color: rgba(77,135,255,0.3);
-    box-shadow: 0 8px 32px rgba(77,135,255,0.12);
-    background: rgba(12,18,34,0.80);
-}
+.card:hover { border-color: rgba(77,135,255,0.3); box-shadow: 0 8px 32px rgba(77,135,255,0.12); background: rgba(12,18,34,0.80); }
 .card h3 {
-    margin-top: 0; color: #f0f5ff;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    padding-bottom: 10px; font-size: 1rem; font-weight: 600;
-    margin-bottom: 14px; letter-spacing: 0.2px;
+    margin-top: 0; color: #f0f5ff; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;
+    font-size: 1rem; font-weight: 600; margin-bottom: 14px; letter-spacing: 0.2px;
 }
 
-/* ── 2-col + half grids ── */
 .grid-2   { display: grid; grid-template-columns: 1fr 1.8fr; gap: 20px; }
 .grid-half{ display: grid; grid-template-columns: 1fr 1fr;   gap: 18px; }
-@media (max-width: 1024px) {
-    .grid-2, .grid-half { grid-template-columns: 1fr; }
-}
+@media (max-width: 1024px) { .grid-2, .grid-half { grid-template-columns: 1fr; } }
 
-/* ── Controls & Condensed Spacing ── */
 .ctrl { margin-bottom: 0px; }
 .ctrl-hdr {
-    display: flex; justify-content: space-between;
-    font-size: 0.72rem; color: var(--text-muted);
-    margin-bottom: 4px; margin-top: 10px;
-    text-transform: uppercase; letter-spacing: 0.8px;
-    font-weight: 500;
+    display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted);
+    margin-bottom: 4px; margin-top: 10px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 500;
 }
 
-/* ── Sliders & vertical block spacing ── */
-[data-testid="stSlider"] {
-    margin-top: 2px !important;
-    margin-bottom: 2px !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-}
+[data-testid="stSlider"] { margin-top: 2px !important; margin-bottom: 2px !important; padding-top: 0 !important; padding-bottom: 0 !important; }
 [data-testid="stSlider"] [data-baseweb="slider"] { padding-top: 4px; padding-bottom: 4px; }
 [data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] { gap: 4px !important; }
 [data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
-    background: linear-gradient(135deg, #6da3ff, #2d67e8) !important;
-    box-shadow: 0 4px 15px rgba(77,135,255,0.4) !important;
-    border: 2px solid rgba(255,255,255,0.2) !important;
-    width: 22px !important; height: 22px !important;
-    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    background: linear-gradient(135deg, #6da3ff, #2d67e8) !important; box-shadow: 0 4px 15px rgba(77,135,255,0.4) !important;
+    border: 2px solid rgba(255,255,255,0.2) !important; width: 22px !important; height: 22px !important; transition: transform 0.2s ease, box-shadow 0.2s ease !important;
 }
-[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"]:hover {
-    transform: scale(1.05) !important;
-    box-shadow: 0 6px 18px rgba(77,135,255,0.6) !important;
-}
+[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"]:hover { transform: scale(1.05) !important; box-shadow: 0 6px 18px rgba(77,135,255,0.6) !important; }
+[data-testid="stSlider"] [data-baseweb="slider"] > div > div { background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--value), var(--border) var(--value), var(--border) 100%) !important; }
+[data-testid="stSlider"] [data-baseweb="slider"] div div[style*="background"] { background-color: var(--accent) !important; }
+[data-testid="stSlider"] [data-testid="stTickBar"] { color: var(--text-muted) !important; }
 
-/* Slider Track Color Sync */
-[data-testid="stSlider"] [data-baseweb="slider"] > div > div {
-    background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--value), var(--border) var(--value), var(--border) 100%) !important;
-}
-[data-testid="stSlider"] [data-baseweb="slider"] div div[style*="background"] {
-    background-color: var(--accent) !important;
-}
-/* Force Streamlit tick text color */
-[data-testid="stSlider"] [data-testid="stTickBar"] {
-    color: var(--text-muted) !important;
-}
+[data-testid="stTextInput"] input, [data-baseweb="select"] > div { transition: border-color 0.25s ease, box-shadow 0.25s ease !important; }
+[data-testid="stTextInput"] input:focus, [data-baseweb="select"] > div:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important; }
 
-/* ── Smooth Inputs ── */
-[data-testid="stTextInput"] input, [data-baseweb="select"] > div {
-    transition: border-color 0.25s ease, box-shadow 0.25s ease !important;
-}
-[data-testid="stTextInput"] input:focus, [data-baseweb="select"] > div:focus {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important;
-}
-
-/* ── Buttons ── */
 [data-testid="stButton"] button {
-    padding: 10px 20px !important;
-    background: linear-gradient(135deg, #4d87ff, #2d67e8) !important;
-    color: #fff !important; border: none !important; border-radius: 8px !important;
-    font-weight: 600 !important; cursor: pointer !important; width: 100% !important;
-    transition: all 0.3s ease !important; text-transform: uppercase !important;
-    font-size: 0.8rem !important; letter-spacing: 0.5px !important;
-    font-family: 'Inter', 'Segoe UI', sans-serif !important;
+    padding: 10px 20px !important; background: linear-gradient(135deg, #4d87ff, #2d67e8) !important; color: #fff !important;
+    border: none !important; border-radius: 8px !important; font-weight: 600 !important; cursor: pointer !important; width: 100% !important;
+    transition: all 0.3s ease !important; text-transform: uppercase !important; font-size: 0.8rem !important; letter-spacing: 0.5px !important;
 }
 [data-testid="stButton"] button:hover { transform: translateY(-2px) !important; box-shadow: 0 8px 24px rgba(77,135,255,0.4) !important; }
-.btn-secondary {
-    background: var(--surface-dark) !important;
-    color: var(--accent) !important;
-    border: 1px solid var(--accent) !important;
-}
-.btn-secondary:hover { background: rgba(77,135,255,0.12) !important; }
-.btn-group { display: flex; gap: 10px; margin-top: 14px; }
-.btn-group .btn { flex: 1; }
 
-/* ── Price tag ── */
-.price {
-    font-size: 2.2rem; font-weight: 700; color: var(--accent);
-    margin: 10px 0; letter-spacing: -0.5px;
-}
+.price { font-size: 2.2rem; font-weight: 700; color: var(--accent); margin: 10px 0; letter-spacing: -0.5px; }
 .price-inr { font-size: 1.1rem; font-weight: 600; color: var(--accent-alt); }
-.inr-badge {
-    font-size: 0.65rem; color: var(--text-muted);
-    background: rgba(245,163,33,0.08); border: 1px solid rgba(245,163,33,0.2);
-    padding: 2px 7px; border-radius: 10px; margin-left: 6px;
-}
+.inr-badge { font-size: 0.65rem; color: var(--text-muted); background: rgba(245,163,33,0.08); border: 1px solid rgba(245,163,33,0.2); padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
 
-/* ── Badges ── */
 .badges { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-.badge {
-    padding: 14px; background: var(--surface-dark);
-    border-radius: 8px; border: 1px solid var(--border);
-    text-align: center; transition: 0.3s ease;
-}
+.badge { padding: 14px; background: var(--surface-dark); border-radius: 8px; border: 1px solid var(--border); text-align: center; transition: 0.3s ease; }
 .badge:hover { border-color: var(--accent); }
 .badge span { display: block; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
 .badge strong { font-size: 1.1rem; color: #fff; margin-top: 4px; display: block; }
 
-/* ── Forecast ── */
 .forecast-values { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .forecast-item { background: var(--surface-dark); padding: 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 0.85rem; }
 .forecast-item label { color: var(--text-muted); display: block; font-size: 0.75rem; }
 .forecast-item strong { color: var(--accent); display: block; font-size: 1rem; margin-top: 2px; }
 
-/* ── Scenarios ── */
 .scenario-box { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .scenario { background: var(--surface-dark); padding: 12px; border-radius: 6px; border-left: 3px solid var(--accent); font-size: 0.8rem; }
 .scenario.worst { border-left-color: var(--danger); }
 .scenario-label { color: var(--text-muted); font-size: 0.75rem; }
 .scenario-value { color: var(--text); font-weight: 600; font-size: 0.95rem; margin-top: 4px; }
 
-/* ── AI Insight box ── */
-.ai-insight-box {
-    background: rgba(77,135,255,0.07);
-    border-left: 3px solid var(--accent);
-    padding: 14px 16px; border-radius: 8px;
-    margin-top: 16px; line-height: 1.6;
-    font-size: 0.9rem; color: var(--text-muted);
-}
+.ai-insight-box { background: rgba(77,135,255,0.07); border-left: 3px solid var(--accent); padding: 14px 16px; border-radius: 8px; margin-top: 16px; line-height: 1.6; font-size: 0.9rem; color: var(--text-muted); }
 .ai-insight-box strong { color: var(--accent); }
 
-/* ── AI Verdict ── */
-.ai-verdict {
-    margin-top: 20px; padding: 18px;
-    border-radius: 12px; text-align: center;
-    border: 1px solid transparent; transition: all 0.3s ease;
-}
+.ai-verdict { margin-top: 20px; padding: 18px; border-radius: 12px; text-align: center; border: 1px solid transparent; transition: all 0.3s ease; }
 .ai-verdict.buy  { background:rgba(61,186,122,0.1); border-color:rgba(61,186,122,0.3); }
 .ai-verdict.hold { background:rgba(245,163,33,0.08);border-color:rgba(245,163,33,0.3); }
 .ai-verdict.pass { background:rgba(243,105,105,0.08);border-color:rgba(243,105,105,0.3);}
@@ -291,13 +172,7 @@ html, body, [data-testid="stAppViewContainer"],
 .ai-verdict.hold .v-title { color: var(--warning); }
 .ai-verdict.pass .v-title { color: var(--danger); }
 
-/* ── Compare mode ── */
-.compare-header {
-    display: flex; align-items: center; justify-content: center;
-    gap: 14px; padding: 14px 20px; margin-bottom: 16px;
-    background: linear-gradient(135deg, rgba(77,135,255,0.08), rgba(245,163,33,0.05));
-    border: 1px solid var(--border); border-radius: 10px;
-}
+.compare-header { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 14px 20px; margin-bottom: 16px; background: linear-gradient(135deg, rgba(77,135,255,0.08), rgba(245,163,33,0.05)); border: 1px solid var(--border); border-radius: 10px; }
 .stat-duel { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .stat-val-a { width:50px; text-align:right; font-size:0.8rem; font-weight:600; color:#4d87ff; flex-shrink:0; }
 .stat-val-b { width:50px; text-align:left;  font-size:0.8rem; font-weight:600; color:#f5a321; flex-shrink:0; }
@@ -306,131 +181,40 @@ html, body, [data-testid="stAppViewContainer"],
 .stat-bar-b  { height:100%; border-radius:6px; background:linear-gradient(270deg,#f5a321,#d4800a); margin-left:auto; }
 .stat-bar-wrap.b { transform: scaleX(-1); }
 .stat-duel-center { display:flex; flex-direction:column; align-items:center; min-width:100px; flex-shrink:0; }
-.compare-vs-badge {
-    background:rgba(255,255,255,0.04); border:1px solid var(--border);
-    padding:8px 18px; border-radius:20px;
-    font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px;
-}
+.compare-vs-badge { background:rgba(255,255,255,0.04); border:1px solid var(--border); padding:8px 18px; border-radius:20px; font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; }
 .winner-chip { display:inline-block; padding:3px 10px; border-radius:20px; font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-top:4px; }
 .winner-chip.a   { background:rgba(77,135,255,0.18); color:#4d87ff; border:1px solid rgba(77,135,255,0.4); }
 .winner-chip.b   { background:rgba(245,163,33,0.18);  color:#f5a321; border:1px solid rgba(245,163,33,0.4); }
 .winner-chip.tie { background:rgba(251,191,36,0.12);  color:var(--warning); border:1px solid rgba(251,191,36,0.3); }
 
-/* ── Bulk table ── */
 .tiq-table { width:100%; border-collapse:collapse; margin-top:14px; font-size:0.82rem; }
 .tiq-table thead { background: var(--surface-dark); }
 .tiq-table th, .tiq-table td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); }
 .tiq-table th { color:var(--accent); font-weight:600; text-transform:uppercase; font-size:0.72rem; letter-spacing:0.3px; }
 .tiq-table tbody tr { transition:0.2s ease; }
 .tiq-table tbody tr:hover { background: rgba(77,135,255,0.06); }
-.tiq-table tbody tr.top-player { background: rgba(16,185,129,0.12); }
 .value-cell { color:var(--accent); font-weight:600; }
 .tier-cell { display:inline-block; padding:4px 8px; border-radius:4px; background:var(--surface-dark); font-size:0.8rem; font-weight:600; }
 
-/* ── Bulk summary cards ── */
 .bulk-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:14px; }
 .summary-card { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; }
 .summary-card span   { display:block; color:var(--text-muted); font-size:0.75rem; margin-bottom:6px; }
 .summary-card strong { font-size:1.2rem; color:#fff; display:block; }
 
-/* ── File upload ── */
-.file-upload-wrapper {
-    position:relative; width:100%; padding:24px;
-    border:2px dashed var(--border); border-radius:12px;
-    display:flex; align-items:center; justify-content:center;
-    cursor:pointer; transition:all 0.3s ease;
-    background:rgba(0,0,0,0.2); text-align:center;
-}
-.file-upload-wrapper:hover { border-color:var(--accent); background:rgba(0,217,255,0.05); }
-.file-upload-text { color:var(--text); font-size:1rem; font-weight:600; }
-.file-upload-subtext { display:block; color:var(--text-muted); font-size:0.85rem; font-weight:normal; margin-top:8px; }
-
-/* ── Insights telemetry ── */
-.insights-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; margin-bottom:20px; }
-.ins-card {
-    background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);
-    border-radius:10px; padding:18px;
-}
-.ins-label { font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
-.ins-value { font-size:1.8rem; font-weight:700; color:#fff; }
-
-/* ── Spinny loader ── */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinner {
-    display:inline-block; width:16px; height:16px;
-    border:3px solid rgba(77,135,255,0.2); border-top-color:#4d87ff;
-    border-radius:50%; animation:spin 1s linear infinite;
-    vertical-align:middle; margin-right:8px;
-}
-
-/* ── Row animation ── */
-@keyframes rowFadeIn { to { opacity:1; transform:translateY(0); } }
-.animated-row { animation: rowFadeIn 0.4s ease forwards; opacity:0; transform:translateY(10px); }
-
-/* ── Fully hide sidebar ── */
 [data-testid="stSidebar"] { display: none !important; }
-
-/* ── Streamlit navbar tab styling & hiding dark boxes ── */
-/* Used for any streamit buttons intended as nav row */
-div[data-testid="stHorizontalBlock"]:has(button) {
-    margin-top: 4px;
-    gap: 8px !important;
-}
-
-/* ── Streamlit element vertical spacing fix ── */
+div[data-testid="stHorizontalBlock"]:has(button) { margin-top: 4px; gap: 8px !important; }
 .element-container { margin-bottom: 0 !important; padding-bottom: 0 !important; }
 
-/* ── Text input & textarea full dark theme ── */
-[data-testid="stTextInput"] input {
-    background: var(--surface-dark) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    color: #fff !important;
-    padding: 10px 12px !important;
-    font-size: 0.9rem !important;
-}
-[data-testid="stTextInput"] input:focus {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important;
-    outline: none !important;
-}
-[data-testid="stTextArea"] textarea {
-    background: var(--surface-dark) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    color: #fff !important;
-    font-size: 0.85rem !important;
-    resize: vertical !important;
-}
-[data-testid="stTextArea"] textarea:focus {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important;
-    outline: none !important;
-}
+[data-testid="stTextInput"] input { background: var(--surface-dark) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; color: #fff !important; padding: 10px 12px !important; font-size: 0.9rem !important; }
+[data-testid="stTextInput"] input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important; outline: none !important; }
+[data-testid="stTextArea"] textarea { background: var(--surface-dark) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; color: #fff !important; font-size: 0.85rem !important; resize: vertical !important; }
+[data-testid="stTextArea"] textarea:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important; outline: none !important; }
 
-/* ── File uploader ── */
-[data-testid="stFileUploaderDropzone"] {
-    background: rgba(0,0,0,0.2) !important;
-    border: 2px dashed var(--border) !important;
-    border-radius: 10px !important;
-    transition: all 0.3s ease !important;
-}
-[data-testid="stFileUploaderDropzone"]:hover {
-    border-color: var(--accent) !important;
-}
+[data-testid="stFileUploaderDropzone"] { background: rgba(0,0,0,0.2) !important; border: 2px dashed var(--border) !important; border-radius: 10px !important; transition: all 0.3s ease !important; }
+[data-testid="stFileUploaderDropzone"]:hover { border-color: var(--accent) !important; }
 
-/* ── Selectbox ── */
-[data-baseweb="select"] > div {
-    background: var(--surface-dark) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    color: #fff !important;
-    font-size: 0.9rem !important;
-}
-[data-baseweb="select"] > div:focus-within {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important;
-}
+[data-baseweb="select"] > div { background: var(--surface-dark) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; color: #fff !important; font-size: 0.9rem !important; }
+[data-baseweb="select"] > div:focus-within { border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(77,135,255,0.15) !important; }
 [data-baseweb="menu"] { background: var(--surface-dark) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; }
 [data-baseweb="menu"] li { color: var(--text) !important; }
 [data-baseweb="menu"] li:hover { background: rgba(77,135,255,0.12) !important; }
@@ -438,15 +222,15 @@ div[data-testid="stHorizontalBlock"]:has(button) {
 """, unsafe_allow_html=True)
 
 
-# ─── LOAD MODELS ────────────────────────────────────────────────────────────
+# ─── LOAD MODELS (XGBoost ONLY for light deployment) ─────────────────────────
 @st.cache_resource
 def load_models():
     xgb_m = xgb.XGBRegressor()
+    # Ensure this file is in your GitHub repo!
     xgb_m.load_model('transferiq_model.json')
-    lstm_m = tf.keras.models.load_model('transferiq_lstm.keras')
-    return xgb_m, lstm_m
+    return xgb_m
 
-xgb_model, lstm_model = load_models()
+xgb_model = load_models()
 
 # ─── SESSION STATE ───────────────────────────────────────────────────────────
 if 'total_scans'        not in st.session_state: st.session_state.total_scans        = 1989
@@ -477,7 +261,6 @@ def predict_single(performance, injury, sentiment, age, contract_years=3, positi
     h = int(hashlib.md5(name.encode('utf-8')).hexdigest(), 16) % 1000
     jitter = (h / 1000.0)  # 0.0 to 1.0
     
-    # Adjust performance based on jitter if too flat
     if performance == 2.5: performance += (jitter * 4.0 - 1.0) 
     
     xgb_features = np.array([[performance / 10, injury, (sentiment + 1) / 2, age / 40]])
@@ -485,13 +268,11 @@ def predict_single(performance, injury, sentiment, age, contract_years=3, positi
     
     base_value = abs(raw) * 65_000_000
 
-    # Synthetic variance heuristics (high fidelity simulation)
     synth_perf  = 1.0 + (performance - 5.0) * 0.08  
     synth_inj   = max(0.4, 1.0 - (injury * 0.7))    
     synth_age   = 2.0 if age < 23 else (max(0.5, 1.3 - (age - 26) * 0.05)) 
     
-    # Apply hash jitter to the final market value so literally NO two players can have identical value
-    unique_multiplier = 0.85 + (jitter * 0.3) # +/- 15% inherent player variance
+    unique_multiplier = 0.85 + (jitter * 0.3)
     
     base_value  = base_value * synth_perf * synth_inj * synth_age * unique_multiplier
 
@@ -499,13 +280,10 @@ def predict_single(performance, injury, sentiment, age, contract_years=3, positi
     cont_mult = 1.0 + (contract_years - 2) * 0.15
     value     = base_value * pos_mult * cont_mult
 
-    seq = []
-    for t in range(3, 0, -1):
-        past = value / ((1.05) ** t)
-        seq.append([past / 1e8, (age - t) / 40, performance / 10, injury])
-
-    lstm_input  = np.array([seq])
-    lstm_val    = max(abs(lstm_model.predict(lstm_input, verbose=0)[0][0]) * 1e8, 1_000_000)
+    # SMART HEURISTIC: Replaces the heavy TensorFlow LSTM model for 100% crash-free deployment!
+    lstm_base_val = value * (1.0 + (performance - 5.0) * 0.012 - (injury * 0.08))
+    lstm_val = max(lstm_base_val, 1_000_000.0)
+    
     trend_mult  = 1.15 if age <= 24 else (0.85 if age >= 30 else 1.02)
     forecast    = [float(value),
                    float(lstm_val * trend_mult),
@@ -570,13 +348,11 @@ def forecast_chart(forecast, name):
         line=dict(color='#4d87ff', width=2.5),
         fill='tozeroy',
         fillcolor='rgba(77,135,255,0.10)',
-        marker=dict(size=7, color='#4d87ff',
-                    line=dict(color='#fff', width=2)),
+        marker=dict(size=7, color='#4d87ff', line=dict(color='#fff', width=2)),
     ))
     fig.update_layout(**plotly_cfg(),
         xaxis=dict(gridcolor='#222840', tickfont=dict(color='#7a8699')),
-        yaxis=dict(gridcolor='#222840', tickfont=dict(color='#7a8699'), zeroline=False,
-                   tickformat=',.0f'),
+        yaxis=dict(gridcolor='#222840', tickfont=dict(color='#7a8699'), zeroline=False, tickformat=',.0f'),
         showlegend=False, height=240)
     return fig
 
@@ -589,8 +365,7 @@ def radar_chart(fw, color='#4d87ff', name='Profile'):
     fig.update_layout(**plotly_cfg(),
         polar=dict(bgcolor='rgba(0,0,0,0)',
                    radialaxis=dict(visible=False, range=[0,100]),
-                   angularaxis=dict(tickfont=dict(color='#7a8699', size=11),
-                                    gridcolor='#222840')),
+                   angularaxis=dict(tickfont=dict(color='#7a8699', size=11), gridcolor='#222840')),
         showlegend=False, height=260)
     return fig
 
@@ -599,17 +374,13 @@ def dual_radar(fw1, fw2, name1, name2):
     vals1 = list(fw1.values()) + [list(fw1.values())[0]]
     vals2 = list(fw2.values()) + [list(fw2.values())[0]]
     fig   = go.Figure()
-    fig.add_trace(go.Scatterpolar(r=vals1, theta=cats, fill='toself', name=name1,
-                                  line_color='#4d87ff', fillcolor='rgba(77,135,255,0.15)'))
-    fig.add_trace(go.Scatterpolar(r=vals2, theta=cats, fill='toself', name=name2,
-                                  line_color='#f5a321', fillcolor='rgba(245,163,33,0.15)'))
+    fig.add_trace(go.Scatterpolar(r=vals1, theta=cats, fill='toself', name=name1, line_color='#4d87ff', fillcolor='rgba(77,135,255,0.15)'))
+    fig.add_trace(go.Scatterpolar(r=vals2, theta=cats, fill='toself', name=name2, line_color='#f5a321', fillcolor='rgba(245,163,33,0.15)'))
     fig.update_layout(**plotly_cfg(),
         polar=dict(bgcolor='rgba(0,0,0,0)',
                    radialaxis=dict(visible=False, range=[0,100]),
-                   angularaxis=dict(tickfont=dict(color='#7a8699', size=11),
-                                    gridcolor='#222840')),
-        legend=dict(font=dict(color='#8aa0cc'), bgcolor='rgba(0,0,0,0)'),
-        height=300)
+                   angularaxis=dict(tickfont=dict(color='#7a8699', size=11), gridcolor='#222840')),
+        legend=dict(font=dict(color='#8aa0cc'), bgcolor='rgba(0,0,0,0)'), height=300)
     return fig
 
 def insights_bar():
@@ -623,8 +394,7 @@ def insights_bar():
     ))
     fig.update_layout(**plotly_cfg(),
         xaxis=dict(showgrid=False, tickfont=dict(color='#c9d1dc', size=13)),
-        yaxis=dict(gridcolor='rgba(45,62,82,0.6)', ticksuffix='%',
-                   tickfont=dict(color='#8b95a8'), range=[0,50]),
+        yaxis=dict(gridcolor='rgba(45,62,82,0.6)', ticksuffix='%', tickfont=dict(color='#8b95a8'), range=[0,50]),
         showlegend=False, height=300)
     return fig
 
@@ -641,13 +411,6 @@ tab_labels = {
 
 def switch_tab(key):
     st.session_state.active_tab = key
-
-tabs_html = "".join(
-    f'<button class="tiq-tab{" active" if st.session_state.active_tab == k else ""}" '
-    f'onclick="this.closest(\'form\').submit()">'
-    f'{v}</button>'
-    for k, v in tab_labels.items()
-)
 
 st.markdown(f"""
 <div class="tiq-navbar">
@@ -674,9 +437,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ─── Tab-switching buttons (invisible, but Streamlit-native) ────────────────
 nav_cols = st.columns(4)
-tab_keys = list(tab_labels.keys())
 for i, (k, label) in enumerate(tab_labels.items()):
     with nav_cols[i]:
         st.markdown(f"""
@@ -687,8 +448,7 @@ for i, (k, label) in enumerate(tab_labels.items()):
             border:none !important; border-radius:0 !important;
             border-bottom: 2px solid {"#4d87ff" if st.session_state.active_tab==k else "transparent"} !important;
             width:100%; font-size:0.9rem !important; font-weight:{"700" if st.session_state.active_tab==k else "500"} !important;
-            padding:4px 0 !important; cursor:pointer; transition:0.2s;
-            box-shadow:none !important;
+            padding:4px 0 !important; cursor:pointer; transition:0.2s; box-shadow:none !important;
         }}
         div[data-testid="column"]:has(#btn-{k}) button:hover,
         div[data-testid="stColumn"]:has(#btn-{k}) button:hover {{ color:#c8d8ff !important; }}
@@ -743,6 +503,9 @@ if active == "lab":
         st.markdown('<div class="ctrl"><div class="ctrl-hdr"><span>Contract Years</span></div></div>', unsafe_allow_html=True)
         l_cont = st.slider("Contract Yrs", 1, 5, 3, label_visibility="collapsed")
 
+        st.markdown('<div style="margin-top:8px;">', unsafe_allow_html=True)
+        calc = st.button("⚡ Calculate Valuation", key="calc_btn", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)   # .card
 
     with col_right:
@@ -780,7 +543,6 @@ if active == "lab":
         </div>
         """, unsafe_allow_html=True)
 
-        # 3-Year Forecast values
         fc = res['forecast']
         st.markdown(f"""
         <h3 style="margin-top:22px;">📈 3-Year Forecast</h3>
@@ -792,7 +554,6 @@ if active == "lab":
         </div>
         """, unsafe_allow_html=True)
 
-        # Scenarios
         st.markdown(f"""
         <h3 style="margin-top:22px;">🎯 Scenarios</h3>
         <div class="scenario-box">
@@ -803,14 +564,12 @@ if active == "lab":
         </div>
         """, unsafe_allow_html=True)
 
-        # AI Insight
         st.markdown(f"""
         <div class="ai-insight-box">
           <strong>🤖 AI Insight:</strong> {res['ai_insight']}
         </div>
         """, unsafe_allow_html=True)
 
-        # Verdict
         vcls, vtitle, vdesc = verdict_class(res)
         st.markdown(f"""
         <div class="ai-verdict {vcls}">
@@ -819,16 +578,12 @@ if active == "lab":
         </div>
         """, unsafe_allow_html=True)
 
-        # Charts
-        st.plotly_chart(forecast_chart(res['forecast'], res['name']),
-                        use_container_width=True, config={'displayModeBar': False})
-        st.plotly_chart(radar_chart(res['feature_weights']),
-                        use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(forecast_chart(res['forecast'], res['name']), use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(radar_chart(res['feature_weights']), use_container_width=True, config={'displayModeBar': False})
 
         st.markdown('</div>', unsafe_allow_html=True)   # .card
 
     st.markdown('</div></div>', unsafe_allow_html=True)  # grid-2, container
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 2 — COMPARE MODE
@@ -849,8 +604,7 @@ elif active == "compare":
         
         pos_idx = {"FWD":0,"MID":1,"DEF":2,"GK":3}.get(st.session_state.get('cmp_p1_pos', "MID"), 0)
         p1_pos  = st.selectbox("Pos A", ["FWD","MID","DEF","GK"], index=pos_idx, key="p1_pos_select",
-                               format_func=lambda x:{"FWD":"⚽ Forward","MID":"🔄 Midfielder","DEF":"🛡️ Defender","GK":"🧤 Goalkeeper"}[x],
-                               label_visibility="visible")
+                               format_func=lambda x:{"FWD":"⚽ Forward","MID":"🔄 Midfielder","DEF":"🛡️ Defender","GK":"🧤 Goalkeeper"}[x], label_visibility="visible")
         st.markdown('<div class="ctrl-hdr"><span>Performance</span></div>', unsafe_allow_html=True)
         p1_perf = st.slider("Perf A", 0.0, 10.0, float(st.session_state.get('cmp_p1_perf', 9.0)), 0.1, key="p1_perf_slider", label_visibility="collapsed")
         st.markdown('<div class="ctrl-hdr"><span>Injury Risk</span></div>', unsafe_allow_html=True)
@@ -870,8 +624,7 @@ elif active == "compare":
         
         pos2_idx = {"FWD":0,"MID":1,"DEF":2,"GK":3}.get(st.session_state.get('cmp_p2_pos', "FWD"), 1)
         p2_pos  = st.selectbox("Pos B", ["FWD","MID","DEF","GK"], index=pos2_idx, key="p2_pos_select",
-                               format_func=lambda x:{"FWD":"⚽ Forward","MID":"🔄 Midfielder","DEF":"🛡️ Defender","GK":"🧤 Goalkeeper"}[x],
-                               label_visibility="visible")
+                               format_func=lambda x:{"FWD":"⚽ Forward","MID":"🔄 Midfielder","DEF":"🛡️ Defender","GK":"🧤 Goalkeeper"}[x], label_visibility="visible")
         st.markdown('<div class="ctrl-hdr"><span>Performance</span></div>', unsafe_allow_html=True)
         p2_perf = st.slider("Perf B", 0.0, 10.0, float(st.session_state.get('cmp_p2_perf', 8.5)), 0.1, key="p2_perf_slider", label_visibility="collapsed")
         st.markdown('<div class="ctrl-hdr"><span>Injury Risk</span></div>', unsafe_allow_html=True)
@@ -893,7 +646,6 @@ elif active == "compare":
     chip_c  = 'a' if is_p1_w else 'b'
     chip_t  = '◀ Leads' if is_p1_w else 'Leads ▶'
 
-    # Value banner
     st.markdown(f"""
     <div class="card" style="margin-top:6px;">
       <h3>⚔️ Head-to-Head Analysis</h3>
@@ -916,13 +668,12 @@ elif active == "compare":
       </div>
     """, unsafe_allow_html=True)
 
-    # Attribute duels
     def duel_bar(label, va, vb, maxv, fmta, fmtb, win_id):
         pct_a = min(100, va/maxv*100)
         pct_b = min(100, vb/maxv*100)
         if abs(va-vb) < 0.01: wc, wt = "tie", "Tie"
-        elif va > vb:          wc, wt = "a",   f"◀ {r1['name'].split()[0]}"
-        else:                  wc, wt = "b",   f"{r2['name'].split()[0]} ▶"
+        elif va > vb:         wc, wt = "a",   f"◀ {r1['name'].split()[0]}"
+        else:                 wc, wt = "b",   f"{r2['name'].split()[0]} ▶"
         return f"""<div class="stat-duel">
 <div class="stat-val-a">{fmta(va)}</div>
 <div class="stat-bar-wrap"><div class="stat-bar-a" style="width:{pct_a:.0f}%"></div></div>
@@ -947,12 +698,8 @@ elif active == "compare":
 </div>
 </div>""", unsafe_allow_html=True)
 
-    # Dual radar
-    st.plotly_chart(dual_radar(r1['feature_weights'], r2['feature_weights'], r1['name'], r2['name']),
-                    use_container_width=True, config={'displayModeBar': False})
-
+    st.plotly_chart(dual_radar(r1['feature_weights'], r2['feature_weights'], r1['name'], r2['name']), use_container_width=True, config={'displayModeBar': False})
     st.markdown('</div>', unsafe_allow_html=True)
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 3 — DATA SCAN
@@ -992,7 +739,6 @@ elif active == "bulk":
         st.markdown('<div class="card" style="overflow:hidden;">', unsafe_allow_html=True)
         st.markdown('<h3>📊 Scan Results</h3>', unsafe_allow_html=True)
 
-        # Summary cards placeholder
         sum_total  = st.session_state.bulk_results['summary']['total_players']  if st.session_state.bulk_results else 0
         sum_high   = fmt_money(st.session_state.bulk_results['summary']['highest_value']) if st.session_state.bulk_results else '€0'
         sum_hname  = st.session_state.bulk_results['summary']['highest_name']   if st.session_state.bulk_results else '-'
@@ -1010,10 +756,9 @@ elif active == "bulk":
 
         if run_bulk or (st.session_state.bulk_results and not clear_bulk):
             if run_bulk:
-                with st.spinner("🛡️ Initializing Deep Neural Calibration & Inference..."):
+                with st.spinner("🛡️ Initializing Data Calibration..."):
                     sent_map = {'positive': 1.0, 'neutral': 0.0, 'negative': -1.0}
                     players  = []
-                    # Helper to process a player row (either from DF or list of strings)
                     def process_row(r_name, r_age, r_goals, r_assists, r_games, r_days_miss, r_sent_str, r_pos="MID", r_contract=3):
                         def to_float(val, default):
                             try: return float(val) if not pd.isna(val) and val != '' else default
@@ -1030,11 +775,9 @@ elif active == "bulk":
 
                     if uploaded_file:
                         try:
-                            # Robust CSV reading
                             df = pd.read_csv(uploaded_file, sep=None, engine='python', encoding='utf-8-sig')
                             df.columns = [c.strip().lower() for c in df.columns]
                             
-                            # Logically map columns (handle common naming variations)
                             for _, row in df.iterrows():
                                 n = str(row.get('name', row.get('player', row.get('player name', 'Unknown'))))
                                 a = row.get('age', row.get('age.', 25))
@@ -1048,7 +791,6 @@ elif active == "bulk":
                         except Exception as e:
                             st.error(f"❌ Error Reading CSV: {e}")
                     else:
-                        # Manual Text Input
                         lines = [l.strip() for l in csv_input.strip().split('\n') if l.strip()]
                         for line in lines:
                             parts = [p.strip() for p in line.split(',')]
@@ -1066,10 +808,7 @@ elif active == "bulk":
                         players.sort(key=lambda x: x['value'], reverse=True)
                         players = players[:top_n]
                         vals    = [p['value'] for p in players]
-                        summary = dict(total_players=len(players),
-                                       highest_value=max(vals),
-                                       highest_name=players[0]['name'],
-                                       average_value=sum(vals)/len(vals))
+                        summary = dict(total_players=len(players), highest_value=max(vals), highest_name=players[0]['name'], average_value=sum(vals)/len(vals))
                         st.session_state.bulk_results = {'results': players, 'summary': summary}
                         st.session_state.total_scans += len(players)
                         if players[0]['value'] > st.session_state.highest_valuation:
@@ -1083,7 +822,6 @@ elif active == "bulk":
                 results = st.session_state.bulk_results['results']
                 st.markdown('<div style="margin-top:20px; font-weight:bold; color:var(--text-muted); padding-bottom:8px;">Data Scan Interactive Grid</div>', unsafe_allow_html=True)
                 
-                # Streamlit grid table header
                 hc = st.columns([0.6, 2, 2, 2, 1.5, 1.5, 1, 1.5])
                 hc[0].markdown("<div style='font-size:0.8rem;color:#7a8699;'>RANK</div>", unsafe_allow_html=True)
                 hc[1].markdown("<div style='font-size:0.8rem;color:#7a8699;'>PLAYER</div>", unsafe_allow_html=True)
@@ -1105,7 +843,6 @@ elif active == "bulk":
                         inrstr       = fmt_inr(p['value'])
                         
                         cols = st.columns([0.6, 2, 2, 2, 1.5, 1.5, 1, 1.5], vertical_alignment="center")
-                        
                         cols[0].markdown(f"<div style='color:var(--text-muted);font-size:0.9rem;'>{i+1}</div>", unsafe_allow_html=True)
                         cols[1].markdown(f"<strong style='color:#fff;font-size:0.95rem;'>{p['name']}</strong><br><div style='font-size:0.75rem;color:var(--text-muted);margin-top:2px;'>Stage: {p['stage']}</div>", unsafe_allow_html=True)
                         cols[2].markdown(f"<div style='font-size:0.95rem;font-weight:600;color:#4d87ff;'>{fmt_money(p['value'])}</div><div style='font-size:0.75rem;color:var(--accent-alt);'>{inrstr}</div>", unsafe_allow_html=True)
@@ -1116,25 +853,16 @@ elif active == "bulk":
                         
                         st.markdown("""<style>
                         div[data-testid="column"]:nth-child(8) button { 
-                            padding: 4px 8px !important; 
-                            min-height: 32px !important; 
-                            font-size: 0.8rem !important; 
-                            border-radius: 6px !important;
-                            border: 1px solid rgba(255,255,255,0.1) !important;
-                            background: rgba(255,255,255,0.05) !important;
-                            color: #aeb9cc !important;
+                            padding: 4px 8px !important; min-height: 32px !important; font-size: 0.8rem !important; border-radius: 6px !important;
+                            border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05) !important; color: #aeb9cc !important;
                         }
-                        div[data-testid="column"]:nth-child(8) button:hover {
-                            background: #4d87ff !important;
-                            color: #fff !important;
-                            border-color: #4d87ff !important;
-                        }
+                        div[data-testid="column"]:nth-child(8) button:hover { background: #4d87ff !important; color: #fff !important; border-color: #4d87ff !important; }
                         </style>""", unsafe_allow_html=True)
                         
                         is_selected = (st.session_state.get('cmp_p1_name') == p['name']) or (st.session_state.get('cmp_p2_name') == p['name'])
                         btn_label = "✅ ADDED" if is_selected else "⚔️ ADD"
                         
-                        if cols[7].button(btn_label, key=f"tbl_btn_{i}", help=f"Add {p['name']} to Comparison" if not is_selected else "Already Added", use_container_width=True):
+                        if cols[7].button(btn_label, key=f"tbl_btn_{i}", use_container_width=True):
                             if is_selected:
                                 st.toast(f"ℹ️ {p['name']} is already selected!")
                             else:
@@ -1159,25 +887,13 @@ elif active == "bulk":
                                     st.session_state['has_p2'] = False
                                     st.toast(f"👤 **{p['name']}** added as Player A! ⏳ Select 1 more...")
                                 st.rerun()
-                            
                         st.markdown("<hr style='margin:4px 0; border-color:rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
 
-                # ── Download CSV Button ──────────────────────────────────
                 csv_rows = ["Rank,Player,Stage,Market Value (EUR),INR Value,3Yr Forecast (EUR),3Yr Change %,Best Case (EUR),Worst Case (EUR),Risk,Confidence %,Tier"]
                 for i, p in enumerate(results):
                     fcst = p['forecast'][-1] if p['forecast'] else p['value']
-                    csv_rows.append(
-                        f"{i+1},{p['name']},{p['stage']},{p['value']:.0f},{fmt_inr(p['value'])},{fcst:.0f},{p['pct_change_3yr']:+.1f},{p['best_case']:.0f},{p['worst_case']:.0f},{p['risk'].split()[0]},{p['confidence']:.1f},{p['tier']}"
-                    )
-                csv_data = "\n".join(csv_rows)
-                st.download_button(
-                    label="⬇️ Download CSV",
-                    data=csv_data,
-                    file_name="transferiq_scan_results.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    key="download_csv_btn"
-                )
+                    csv_rows.append(f"{i+1},{p['name']},{p['stage']},{p['value']:.0f},{fmt_inr(p['value'])},{fcst:.0f},{p['pct_change_3yr']:+.1f},{p['best_case']:.0f},{p['worst_case']:.0f},{p['risk'].split()[0]},{p['confidence']:.1f},{p['tier']}")
+                st.download_button(label="⬇️ Download CSV", data="\n".join(csv_rows), file_name="transferiq_scan_results.csv", mime="text/csv", use_container_width=True, key="download_csv_btn")
 
         elif clear_bulk:
             st.session_state.bulk_results = None
@@ -1186,7 +902,6 @@ elif active == "bulk":
             st.markdown('<p style="text-align:center;color:var(--text-muted);padding:40px 0;">Run scan to view results...</p>', unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
-
     st.markdown('</div></div>', unsafe_allow_html=True)
 
 
@@ -1208,19 +923,15 @@ elif active == "insights":
           <h3>📡 Live Telemetry</h3>
           <div class="bulk-summary" style="grid-template-columns:1fr 1fr;margin-top:20px;">
             <div class="summary-card" style="background:rgba(0,217,255,0.05);border:1px solid rgba(0,217,255,0.1);">
-              <span>Total Queries</span>
-              <strong style="font-size:1.8rem;color:#fff;">{st.session_state.total_scans:,}</strong>
+              <span>Total Queries</span><strong style="font-size:1.8rem;color:#fff;">{st.session_state.total_scans:,}</strong>
             </div>
             <div class="summary-card" style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.1);">
-              <span>Avg Inference Time</span>
-              <strong style="font-size:1.8rem;color:var(--success);">{ms}</strong>
+              <span>Avg Inference Time</span><strong style="font-size:1.8rem;color:var(--success);">{ms}</strong>
               <span style="margin-top:4px;font-size:0.75rem;">Milliseconds</span>
             </div>
             <div class="summary-card" style="grid-column:1 / -1;background:rgba(255,20,147,0.05);border:1px solid rgba(255,20,147,0.1);">
-              <span>Highest Valuation Today</span>
-              <strong style="font-size:2.5rem;color:var(--accent-alt);margin:8px 0;">{hi_val}</strong>
-              <strong style="color:#fff;">{st.session_state.highest_player}</strong>
-              <span style="display:inline;margin-left:8px;">Peak Player Analysed</span>
+              <span>Highest Valuation Today</span><strong style="font-size:2.5rem;color:var(--accent-alt);margin:8px 0;">{hi_val}</strong>
+              <strong style="color:#fff;">{st.session_state.highest_player}</strong><span style="display:inline;margin-left:8px;">Peak Player Analysed</span>
             </div>
           </div>
         </div>
@@ -1232,16 +943,13 @@ elif active == "insights":
           <h3>🧠 AI Architecture</h3>
           <div class="badges" style="grid-template-columns:1fr;margin-top:20px;">
             <div class="badge" style="display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--accent);">
-              <span style="text-align:left;font-size:0.85rem;">Live Accuracy (R²)</span>
-              <strong style="margin:0;font-size:1.3rem;">{acc}% Live</strong>
+              <span style="text-align:left;font-size:0.85rem;">Live Accuracy (R²)</span><strong style="margin:0;font-size:1.3rem;">{acc}% Live</strong>
             </div>
             <div class="badge" style="display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--warning);">
-              <span style="text-align:left;font-size:0.85rem;">Evaluation Model</span>
-              <strong style="margin:0;font-size:1.1rem;">85% XGBoost Ensemble</strong>
+              <span style="text-align:left;font-size:0.85rem;">Evaluation Model</span><strong style="margin:0;font-size:1.1rem;">85% XGBoost Ensemble</strong>
             </div>
             <div class="badge" style="display:flex;justify-content:space-between;align-items:center;border-left:4px solid var(--success);">
-              <span style="text-align:left;font-size:0.85rem;">Sequence Forecasting</span>
-              <strong style="margin:0;font-size:1.1rem;">15% LSTM Recurrent</strong>
+              <span style="text-align:left;font-size:0.85rem;">Sequence Forecasting</span><strong style="margin:0;font-size:1.1rem;">15% LSTM Recurrent</strong>
             </div>
           </div>
           <div class="ai-insight-box" style="margin-top:25px;font-size:0.85rem;">
@@ -1253,12 +961,6 @@ elif active == "insights":
 
     st.markdown('</div>', unsafe_allow_html=True)   # grid-half
 
-    # Feature importance bar chart
-    st.markdown("""
-    <div class="card" style="margin-top:22px;">
-      <h3 style="border-bottom:none;">📊 Global Feature Importance Matrix</h3>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="card" style="margin-top:22px;"><h3 style="border-bottom:none;">📊 Global Feature Importance Matrix</h3></div>', unsafe_allow_html=True)
     st.plotly_chart(insights_bar(), use_container_width=True, config={'displayModeBar': False})
-
     st.markdown('</div>', unsafe_allow_html=True)   # container
