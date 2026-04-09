@@ -1,3 +1,7 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import pandas as pd
@@ -5,7 +9,6 @@ import xgboost as xgb
 import numpy as np
 import tensorflow as tf
 import random
-
 app = Flask(__name__, static_url_path='', static_folder='')
 CORS(app)
 
